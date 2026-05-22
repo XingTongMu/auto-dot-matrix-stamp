@@ -1,0 +1,14 @@
+{
+  "pages": [
+    "pages/index/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "AI智能印章",
+    "navigationBarBackgroundColor": "#0a0e1a",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#0a0e1a",
+    "backgroundTextStyle": "dark"
+  },
+  "sitemapLocation": "sitemap.json",
+  "style": "v2"
+}

@@ -1,0 +1,418 @@
+/* ============================================================
+   AI智能印章 - 首页样式 (pages/index/index.wxss)
+   深色科技风格，适合点阵/硬件类应用展示
+============================================================ */
+
+/* ---------- 全局变量 ---------- */
+page {
+  --bg-primary: #0a0e1a;        /* 主背景 - 深空黑 */
+  --bg-card: #131a2e;           /* 卡片背景 */
+  --bg-card-hover: #1a2340;     /* 卡片悬停 */
+  --text-primary: #e8ecf4;      /* 主文字 - 亮白 */
+  --text-secondary: #7a8ba8;    /* 次要文字 - 灰蓝 */
+  --accent-blue: #4a9eff;       /* 蓝色强调 */
+  --accent-cyan: #00d4ff;       /* 青色强调 */
+  --accent-green: #00e676;      /* 绿色 - 成功 */
+  --accent-yellow: #ffd740;     /* 黄色 - 扫描中 */
+  --accent-red: #ff5252;        /* 红色 - 错误 */
+  --border-color: rgba(74, 158, 255, 0.15);  /* 边框色 */
+  --shadow-color: rgba(0, 212, 255, 0.08);   /* 投影色 */
+}
+
+/* ---------- 基础重置 ---------- */
+page {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  font-size: 28rpx;
+  line-height: 1.6;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+/* ---------- 页面容器 ---------- */
+.page-container {
+  padding: 40rpx 30rpx 60rpx;
+  min-height: 100vh;
+  background: linear-gradient(180deg, #0a0e1a 0%, #0d1528 100%);
+}
+
+/* ---------- 头部标题 ---------- */
+.header {
+  text-align: center;
+  padding: 40rpx 0 50rpx;
+  position: relative;
+}
+.header::after {
+  content: '';
+  position: absolute;
+  bottom: 20rpx;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120rpx;
+  height: 4rpx;
+  background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
+  border-radius: 2rpx;
+}
+.title {
+  display: block;
+  font-size: 48rpx;
+  font-weight: 700;
+  letter-spacing: 4rpx;
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.subtitle {
+  display: block;
+  font-size: 26rpx;
+  color: var(--text-secondary);
+  margin-top: 16rpx;
+  letter-spacing: 2rpx;
+}
+
+/* ---------- 主体区域 ---------- */
+.main-section {
+  display: flex;
+  flex-direction: column;
+  gap: 30rpx;
+}
+
+/* ---------- 步骤卡片 ---------- */
+.step-card {
+  background: var(--bg-card);
+  border-radius: 24rpx;
+  padding: 32rpx;
+  border: 1rpx solid var(--border-color);
+  box-shadow: 0 8rpx 32rpx var(--shadow-color);
+  transition: all 0.3s ease;
+}
+.step-card:active {
+  transform: scale(0.99);
+}
+.step-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 24rpx;
+}
+.step-num {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  margin-right: 16rpx;
+  width: 56rpx;
+  text-align: center;
+}
+.step-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 2rpx;
+}
+
+/* ---------- 模式切换 ---------- */
+.mode-switch {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+}
+.mode-option {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16rpx 8rpx;
+  border-radius: 16rpx;
+  background: rgba(255, 255, 255, 0.03);
+  border: 2rpx solid transparent;
+  transition: all 0.2s ease;
+}
+.mode-option:active {
+  transform: scale(0.96);
+}
+.mode-active {
+  background: rgba(74, 158, 255, 0.1);
+  border-color: rgba(74, 158, 255, 0.4);
+  box-shadow: 0 0 16rpx rgba(0, 212, 255, 0.15);
+}
+.mode-icon {
+  font-size: 36rpx;
+  margin-bottom: 4rpx;
+}
+.mode-label {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 1rpx;
+}
+.mode-desc {
+  font-size: 20rpx;
+  color: var(--text-secondary);
+  margin-top: 2rpx;
+}
+.mode-active .mode-label {
+  color: var(--accent-cyan);
+}
+.mode-active .mode-desc {
+  color: var(--accent-blue);
+}
+
+/* ---------- 通用按钮样式 ---------- */
+.btn {
+  width: 100%;
+  height: 88rpx;
+  line-height: 88rpx;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  text-align: center;
+  border: none;
+  margin: 0;
+  padding: 0;
+  transition: all 0.2s ease;
+  letter-spacing: 2rpx;
+}
+.btn::after {
+  border: none;
+}
+
+/* 选择图片按钮 */
+.btn-select {
+  background: linear-gradient(135deg, #1a2a4a, #243b6a);
+  color: var(--accent-blue);
+  border: 1rpx solid rgba(74, 158, 255, 0.3);
+}
+.btn-select:active {
+  background: linear-gradient(135deg, #243b6a, #2a4a8a);
+}
+.btn-select[disabled] {
+  opacity: 0.5;
+  background: #111827;
+  color: #4a5568;
+}
+
+/* 扫描按钮 */
+.btn-scan {
+  background: linear-gradient(135deg, #1a3a2a, #1a5a3a);
+  color: var(--accent-green);
+  border: 1rpx solid rgba(0, 230, 118, 0.3);
+  margin-top: 8rpx;
+}
+.btn-scan:active {
+  background: linear-gradient(135deg, #1a5a3a, #2a7a4a);
+}
+.btn-scan[disabled] {
+  opacity: 0.5;
+  background: #111827;
+  color: #4a5568;
+}
+
+/* 停止扫描按钮 */
+.btn-stop {
+  background: linear-gradient(135deg, #3a1a1a, #5a2a2a);
+  color: var(--accent-red);
+  border: 1rpx solid rgba(255, 82, 82, 0.3);
+  margin-top: 16rpx;
+}
+
+/* 断开连接按钮 */
+.btn-disconnect {
+  background: linear-gradient(135deg, #3a1a1a, #5a2a2a);
+  color: var(--accent-red);
+  border: 1rpx solid rgba(255, 82, 82, 0.3);
+  margin-top: 16rpx;
+}
+
+/* 同步至印章按钮 */
+.btn-sync {
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+  color: #fff;
+  font-size: 32rpx;
+  margin-top: 16rpx;
+  box-shadow: 0 4rpx 24rpx rgba(0, 212, 255, 0.3);
+  border: 1rpx solid rgba(0, 212, 255, 0.5);
+}
+.btn-sync:active {
+  opacity: 0.85;
+  transform: translateY(2rpx);
+}
+.btn-sync[disabled] {
+  opacity: 0.5;
+  background: #1a2a4a;
+  color: #4a6a8a;
+  box-shadow: none;
+}
+
+/* ---------- Canvas 容器 ---------- */
+.canvas-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20rpx 0;
+}
+.preview-canvas {
+  width: 320rpx;
+  height: 320rpx;
+  border-radius: 16rpx;
+  background: #000;
+  border: 2rpx solid var(--border-color);
+  box-shadow: 0 0 40rpx rgba(0, 212, 255, 0.1), inset 0 0 20rpx rgba(0, 0, 0, 0.5);
+}
+
+/* ---------- 状态行 ---------- */
+.status-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 16rpx;
+  padding: 12rpx 20rpx;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12rpx;
+}
+.status-icon {
+  font-size: 28rpx;
+  margin-right: 12rpx;
+}
+.status-text {
+  font-size: 26rpx;
+  letter-spacing: 1rpx;
+}
+.status-processing {
+  color: var(--accent-yellow);
+}
+.status-error {
+  color: var(--accent-red);
+}
+.status-success {
+  color: var(--accent-green);
+}
+.status-info {
+  color: var(--text-secondary);
+}
+
+/* ---------- 蓝牙状态栏 ---------- */
+.ble-status-bar {
+  display: flex;
+  align-items: center;
+  padding: 16rpx 20rpx;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12rpx;
+  margin-bottom: 16rpx;
+}
+.ble-status-dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  margin-right: 16rpx;
+  flex-shrink: 0;
+}
+.dot-green {
+  background: var(--accent-green);
+  box-shadow: 0 0 12rpx rgba(0, 230, 118, 0.6);
+}
+.dot-yellow {
+  background: var(--accent-yellow);
+  box-shadow: 0 0 12rpx rgba(255, 215, 64, 0.6);
+  animation: pulse 1.2s infinite;
+}
+.dot-gray {
+  background: #4a5568;
+}
+.ble-status-label {
+  font-size: 26rpx;
+  color: var(--text-secondary);
+  letter-spacing: 1rpx;
+}
+
+/* ---------- 设备列表 ---------- */
+.device-list {
+  margin-top: 20rpx;
+}
+.device-list-title {
+  font-size: 26rpx;
+  color: var(--text-secondary);
+  margin-bottom: 12rpx;
+  letter-spacing: 1rpx;
+}
+.device-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 20rpx;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 16rpx;
+  margin-bottom: 12rpx;
+  border: 1rpx solid transparent;
+  transition: all 0.2s;
+}
+.device-item:active,
+.device-item-hover {
+  background: rgba(74, 158, 255, 0.1);
+  border-color: rgba(74, 158, 255, 0.3);
+}
+.device-info {
+  flex: 1;
+  min-width: 0;
+}
+.device-name {
+  display: block;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6rpx;
+}
+.device-id {
+  display: block;
+  font-size: 22rpx;
+  color: var(--text-secondary);
+}
+.device-signal {
+  margin-left: 20rpx;
+  flex-shrink: 0;
+}
+.device-rssi {
+  font-size: 24rpx;
+  color: var(--accent-cyan);
+  font-family: 'SF Mono', 'Menlo', monospace;
+}
+
+/* ---------- 已连接提示 ---------- */
+.connected-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20rpx;
+  background: rgba(0, 230, 118, 0.08);
+  border-radius: 16rpx;
+  margin-top: 16rpx;
+  border: 1rpx solid rgba(0, 230, 118, 0.2);
+}
+.connected-icon {
+  font-size: 32rpx;
+  margin-right: 12rpx;
+}
+.connected-text {
+  font-size: 28rpx;
+  color: var(--accent-green);
+  font-weight: 500;
+}
+
+/* ---------- 底部信息 ---------- */
+.footer {
+  text-align: center;
+  padding: 60rpx 0 20rpx;
+}
+.footer-text {
+  font-size: 22rpx;
+  color: rgba(122, 139, 168, 0.5);
+  letter-spacing: 2rpx;
+  font-family: 'SF Mono', 'Menlo', monospace;
+}
+
+/* ---------- 关键帧动画 ---------- */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

@@ -1,0 +1,8 @@
+/* ============================================================
+   AI智能印章 - 全局样式 (app.wxss)
+   ============================================================ */
+page {
+  background-color: #0a0e1a;
+  color: #e8ecf4;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+}

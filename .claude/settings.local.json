@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp -r \"c:/Users/13514/Downloads/ai-smart-stamp-client-main/ai-smart-stamp-client-main/venv/pages\" \"c:/Users/13514/Downloads/ai-smart-stamp-client-main/\")",
+      "Bash(cp -r \"c:/Users/13514/Downloads/ai-smart-stamp-client-main/ai-smart-stamp-client-main/venv/utils\" \"c:/Users/13514/Downloads/ai-smart-stamp-client-main/\")",
+      "Bash(ls -la \"C:/Users/13514/Downloads/Bead-Pattern-Maker-master\")",
+      "Read(//c/Users/13514/Downloads/Bead-Pattern-Maker-master/**)",
+      "Bash(ls \"C:/Users/13514/Downloads/perler-beads-master\")",
+      "Read(//c/Users/13514/Downloads/perler-beads-master/**)"
+    ]
+  }
+}
