@@ -1,0 +1,203 @@
+<!-- pages/index/index.wxml —— 图像转黑白线稿主页 -->
+<scroll-view class="scrollarea" scroll-y>
+  <view class="container">
+    
+    <!-- ===== 标题区域 ===== -->
+    <view class="header">
+      <text class="title">🎨 图像→黑白线稿</text>
+      <text class="subtitle">上传彩色照片，AI 自动提取高质量线稿</text>
+    </view>
+
+    <!-- ===== 图片上传区域 ===== -->
+    <view class="upload-section">
+      <view class="section-label">📷 选择图片</view>
+      <view class="image-preview {{inputImage ? 'has-image' : ''}}" bindtap="chooseImage">
+        <image wx:if="{{inputImage}}" src="{{inputImage}}" mode="aspectFit" class="preview-img" />
+        <view wx:else class="upload-placeholder">
+          <text class="upload-icon">+</text>
+          <text class="upload-text">点击上传彩色照片</text>
+          <text class="upload-hint">支持 JPG / PNG / BMP</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- ===== 参数设置 ===== -->
+    <view class="params-section">
+      <view class="section-label">⚙️ 参数设置</view>
+      
+      <!-- 模式选择 -->
+      <view class="param-item">
+        <text class="param-label">提取模式</text>
+        <view class="radio-group">
+          <view class="radio-item {{mode === 'default' ? 'active' : ''}}" bindtap="setMode" data-mode="default">
+            <text class="radio-dot {{mode === 'default' ? 'dot-active' : ''}}"></text>
+            <text class="radio-text">经典 U-Net</text>
+          </view>
+          <view class="radio-item {{mode === 'improved' ? 'active' : ''}}" bindtap="setMode" data-mode="improved">
+            <text class="radio-dot {{mode === 'improved' ? 'dot-active' : ''}}"></text>
+            <text class="radio-text">平滑上采样</text>
+          </view>
+        </view>
+        <text class="param-desc">improved 模式可消除棋盘伪影</text>
+      </view>
+
+      <!-- CLAHE 开关 -->
+      <view class="param-item">
+        <view class="switch-row">
+          <text class="param-label">局部对比度增强 (CLAHE)</text>
+          <switch checked="{{useClahe}}" bindchange="toggleClahe" color="#4A90D9" />
+        </view>
+        <text class="param-desc">增强局部对比度，防止暗部线条丢失</text>
+      </view>
+
+      <!-- CLAHE 阈值滑块 -->
+      <view class="param-item {{!useClahe ? 'disabled' : ''}}">
+        <view class="slider-row">
+          <text class="param-label">对比度限制系数</text>
+          <text class="slider-value">{{claheClip}}</text>
+        </view>
+        <slider 
+          min="1" max="5" step="0.1" 
+          value="{{claheClip}}" 
+          disabled="{{!useClahe}}"
+          bindchanging="onClaheClipChanging"
+          bindchange="onClaheClipChange"
+          color="#4A90D9" 
+          selected-color="#4A90D9"
+          block-size="20"
+        />
+        <text class="param-desc">值越大对比度增强越强（1.0~5.0）</text>
+      </view>
+
+      <!-- ===== 线宽倍率调节 ===== -->
+      <view class="param-item">
+        <view class="slider-row">
+          <text class="param-label">✏️ 线宽倍率</text>
+          <text class="slider-value">{{thicknessScale}}</text>
+        </view>
+        <slider 
+          min="0" max="10" step="0.1" 
+          value="{{thicknessScale}}" 
+          bindchanging="onThicknessChanging"
+          bindchange="onThicknessChange"
+          color="#FF9800" 
+          selected-color="#FF9800"
+          block-size="20"
+        />
+        <text class="param-desc">1.0=基准线宽，2.0=双倍粗，0.5=减半</text>
+      </view>
+
+      <!-- ===== 输出尺寸控制 ===== -->
+      <view class="param-item">
+
+        <view class="switch-row">
+          <text class="param-label">📐 压缩线稿到指定尺寸</text>
+          <switch checked="{{enableResize}}" bindchange="toggleResize" color="#4A90D9" />
+        </view>
+        <text class="param-desc">勾选后将线稿压缩到 32×32 像素，默认开启</text>
+      </view>
+      <view class="param-item {{!enableResize ? 'disabled' : ''}}">
+        <view class="slider-row">
+          <text class="param-label">输出宽度 (px)</text>
+          <text class="slider-value">{{outputWidth}}</text>
+        </view>
+        <slider 
+          min="8" max="512" step="1" 
+          value="{{outputWidth}}" 
+          disabled="{{!enableResize}}"
+          bindchanging="onWidthChange"
+          bindchange="onWidthChange"
+          color="#66BB6A" 
+          selected-color="#66BB6A"
+          block-size="20"
+        />
+      </view>
+      <view class="param-item {{!enableResize ? 'disabled' : ''}}">
+        <view class="slider-row">
+          <text class="param-label">输出高度 (px)</text>
+          <text class="slider-value">{{outputHeight}}</text>
+        </view>
+        <slider 
+          min="8" max="512" step="1" 
+          value="{{outputHeight}}" 
+          disabled="{{!enableResize}}"
+          bindchanging="onHeightChange"
+          bindchange="onHeightChange"
+          color="#66BB6A" 
+          selected-color="#66BB6A"
+          block-size="20"
+        />
+      </view>
+    </view>
+
+
+    <!-- ===== 操作按钮 ===== -->
+    <view class="action-section">
+      <button 
+        class="generate-btn {{!isProcessing ? '' : 'processing'}}" 
+        disabled="{{!inputImage || isProcessing}}"
+        bindtap="generateSketch"
+      >
+        <text wx:if="{{!isProcessing}}">🔄 生成线稿</text>
+        <text wx:else>⏳ 处理中...</text>
+      </button>
+    </view>
+
+    <!-- ===== 结果展示 ===== -->
+    <view class="result-section" wx:if="{{resultImage}}">
+      <view class="section-label">🖼️ 线稿结果</view>
+      
+      <!-- 压缩模式：显示可交互马赛克（支持点击翻转黑白） -->
+      <block wx:if="{{enableResize}}">
+        <view class="result-box">
+          <image id="mosaicImage" src="{{mosaicSrc || resultImage}}" mode="aspectFit" class="result-canvas" catchtap="onMosaicTap" />
+          <canvas type="2d" id="hiddenMosaicCanvas" class="hidden-mosaic-canvas" />
+        </view>
+        <view class="mosaic-coords-hint">📐 点击 32×32 格子翻转黑白</view>
+      </block>
+      
+      <!-- 非压缩模式：仅展示原始线稿 -->
+      <block wx:else>
+        <view class="result-box">
+          <image src="{{resultImage}}" mode="aspectFit" class="result-canvas" />
+        </view>
+      </block>
+      
+      <!-- 操作按钮组 -->
+      <view class="result-actions">
+        <button class="action-btn save-btn" bindtap="saveImage">💾 保存到相册</button>
+        <button class="action-btn retry-btn" bindtap="resetAll">🔄 重新生成</button>
+      </view>
+    </view>
+
+    <!-- ===== 使用说明 ===== -->
+    <view class="footer">
+      <view class="footer-title">📖 使用说明</view>
+      <text class="footer-text">1. 点击上方区域选择或拍摄一张彩色照片</text>
+      <text class="footer-text">2. 选择后自动弹出裁剪框，可拖动/缩放裁剪为正方形(1:1)</text>
+      <text class="footer-text">3. 点击「确认裁剪」后，根据需要调整提取模式和对比度参数</text>
+      <text class="footer-text">4. 点击「生成线稿」按钮提交处理</text>
+      <text class="footer-text">5. 预览线稿结果，可保存至相册</text>
+    </view>
+
+  </view>
+</scroll-view>
+
+<!-- ===== 图片裁剪弹窗 ===== -->
+<view wx:if="{{showCropper}}" class="cropper-overlay cropper-show">
+  <view class="cropper-header">
+    <view class="cropper-btn" catchtap="onCropperCancel">取消</view>
+    <view class="cropper-title">裁剪图片 (1:1)</view>
+    <view class="cropper-btn cropper-btn-confirm" catchtap="onCropperConfirm">确认</view>
+  </view>
+  <view class="cropper-body">
+    <canvas 
+      type="2d" 
+      id="cropperCanvas" 
+      class="cropper-canvas"
+      catchtouchstart="_onCropTouchStart"
+      catchtouchmove="_onCropTouchMove"
+      catchtouchend="_onCropTouchEnd"
+    />
+  </view>
+</view>
