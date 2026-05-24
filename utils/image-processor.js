@@ -1,39 +1,123 @@
 /* ============================================================
    AI智能印章 - 图像处理模块 (utils/image-processor.js)
-   支持三模式：dither / edge-aware / edge
 
-   算法参考：
-   - Floyd-Steinberg 误差扩散抖动
-   - CIEDE2000 色差公式 (Bead-Pattern-Maker)
-   - 边缘感知降采样 (Bead-Pattern-Maker edgeAwareDownsample)
-   - 二值邻域去噪 (Bead-Pattern-Maker denoisePattern)
+   三个独立管线，纯数据进/出，零外部依赖：
+     processToDither()   — 照片复古模式（Floyd-Steinberg 抖动）
+     processToEdge()     — 硬朗线稿模式（Sobel + 膨胀 + 二值化）
+     processToHalftone() — 波普图腾模式（Cluster-dot 有序抖动）
+
+   输入：Uint8ClampedArray imageData, number w, number h
+   输出：Uint8Array(1024) → 0=凹/白, 1=凸/黑
    ============================================================ */
 
 const GRID_SIZE = 32;
 const TOTAL_PIXELS = GRID_SIZE * GRID_SIZE;
 
-// 边缘感知降采样阈值：区域边缘强度 > 此值则取边缘像素
-const EDGE_THRESHOLD = 80;
-
 // ============================================================
-// 内部工具函数
+// 共享工具
 // ============================================================
 
-function _loadImage(src, canvas) {
-  return new Promise((resolve, reject) => {
-    if (!canvas) { reject(new Error('Canvas 不存在')); return; }
-    const img = canvas.createImage();
-    img.onload = () => resolve(img);
-    img.onerror = (e) => reject(e);
-    img.src = src;
-  });
+/** ITU-R BT.601 灰度化 → Float32Array(w*h)，范围 0-255 */
+function toGrayscale(data, w, h) {
+  const gray = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const idx = i * 4;
+    gray[i] = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+  }
+  return gray;
 }
 
-function _gaussianBlur(imageData, w, h) {
-  const data = imageData.data;
+/** 区域平均降采样 → Float32Array(outSize*outSize)，范围 0-255 */
+function downscale(src, srcW, srcH, outSize) {
+  const result = new Float32Array(outSize * outSize);
+  const bw = srcW / outSize;
+  const bh = srcH / outSize;
+  for (let row = 0; row < outSize; row++) {
+    for (let col = 0; col < outSize; col++) {
+      const sx0 = Math.floor(col * bw);
+      const sy0 = Math.floor(row * bh);
+      const sx1 = Math.min(Math.floor((col + 1) * bw), srcW);
+      const sy1 = Math.min(Math.floor((row + 1) * bh), srcH);
+      let sum = 0, cnt = 0;
+      for (let y = sy0; y < sy1; y++) {
+        for (let x = sx0; x < sx1; x++) {
+          sum += src[y * srcW + x];
+          cnt++;
+        }
+      }
+      result[row * outSize + col] = cnt > 0 ? sum / cnt : 128;
+    }
+  }
+  return result;
+}
+
+/** 统计黑色像素数 */
+export function countBlack(pixelArray) {
+  let n = 0;
+  for (let i = 0; i < pixelArray.length; i++) {
+    if (pixelArray[i] === 1) n++;
+  }
+  return n;
+}
+
+// ============================================================
+// 管线 1：照片复古模式 — Floyd-Steinberg 误差扩散抖动
+// ============================================================
+
+/**
+ * processToDither(imageData, w, h)
+ *
+ * 灰度化 → 缩放至 32×32 → Floyd-Steinberg 误差扩散
+ *
+ * 物理映射（无歧义）：
+ *   暗像素 → stamp 1（凸起/有墨）   亮像素 → stamp 0（凹下/无墨）
+ *   量化阈值 = 128（灰度中点），误差按 7/16 3/16 5/16 1/16 向右下扩散
+ *
+ * @param {Uint8ClampedArray} imageData  RGBA 原始像素
+ * @param {number} w  图像宽度
+ * @param {number} h  图像高度
+ * @returns {Uint8Array} 1024 个 0/1
+ */
+export function processToDither(imageData, w, h) {
+  const gray = toGrayscale(imageData, w, h);
+  const scaled = downscale(gray, w, h, GRID_SIZE);
+
+  // Floyd-Steinberg 误差扩散
+  // 核心原理：逐像素量化（≥128→白/255，<128→黑/0），
+  // 将量化误差按固定比例扩散到尚未处理的右/下/左下/右下邻居，
+  // 使得局部平均灰度逼近原图 —— 用黑白点阵的疏密模拟连续调。
+  const pixels = new Float32Array(scaled);
+  const out = new Uint8Array(TOTAL_PIXELS);
+
+  for (let row = 0; row < GRID_SIZE; row++) {
+    for (let col = 0; col < GRID_SIZE; col++) {
+      const i = row * GRID_SIZE + col;
+      const old = pixels[i];
+
+      // 量化判定
+      const q = old >= 128 ? 255 : 0;      // 量化值（色彩空间）
+      out[i] = q === 0 ? 1 : 0;            // 输出值（stamp：0=凹/白, 1=凸/黑）
+
+      // 误差扩散至四个未处理邻居
+      const err = old - q;
+      if (col + 1 < GRID_SIZE) pixels[i + 1]                += err * 7 / 16;
+      if (row + 1 < GRID_SIZE && col > 0) pixels[i + GRID_SIZE - 1] += err * 3 / 16;
+      if (row + 1 < GRID_SIZE)              pixels[i + GRID_SIZE]     += err * 5 / 16;
+      if (row + 1 < GRID_SIZE && col + 1 < GRID_SIZE) pixels[i + GRID_SIZE + 1] += err * 1 / 16;
+    }
+  }
+
+  return out;
+}
+
+// ============================================================
+// 管线 2：硬朗线稿模式 — Sobel + 形态学膨胀 + 二值化
+// ============================================================
+
+/** 3×3 高斯模糊，kernel [[1,2,1],[2,4,2],[1,2,1]] / 16 */
+function gaussianBlur(data, w, h) {
+  const ker = [[1, 2, 1], [2, 4, 2], [1, 2, 1]];
   const out = new Uint8ClampedArray(data.length);
-  const kernel = [[1, 2, 1], [2, 4, 2], [1, 2, 1]];
-  const ks = 16;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       let r = 0, g = 0, b = 0;
@@ -42,49 +126,35 @@ function _gaussianBlur(imageData, w, h) {
           const px = Math.min(Math.max(x + kx, 0), w - 1);
           const py = Math.min(Math.max(y + ky, 0), h - 1);
           const idx = (py * w + px) * 4;
-          const wt = kernel[ky + 1][kx + 1];
-          r += data[idx] * wt;
-          g += data[idx + 1] * wt;
-          b += data[idx + 2] * wt;
+          const k = ker[ky + 1][kx + 1];
+          r += data[idx] * k;
+          g += data[idx + 1] * k;
+          b += data[idx + 2] * k;
         }
       }
       const oi = (y * w + x) * 4;
-      out[oi]     = Math.round(r / ks);
-      out[oi + 1] = Math.round(g / ks);
-      out[oi + 2] = Math.round(b / ks);
+      out[oi]     = Math.round(r / 16);
+      out[oi + 1] = Math.round(g / 16);
+      out[oi + 2] = Math.round(b / 16);
       out[oi + 3] = data[oi + 3];
     }
   }
-  return { data: out, width: w, height: h };
+  return out;
 }
 
-function _toGrayscale(imageData, w, h) {
-  const data = imageData.data;
-  const gray = new Uint8Array(w * h);
-  for (let i = 0; i < w * h; i++) {
-    const idx = i * 4;
-    gray[i] = Math.round(0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]);
-  }
-  return gray;
-}
-
-// ============================================================
-// Sobel 边缘检测（直接处理 RGBA，含 alpha 加权）
-// 参考 Bead-Pattern-Maker 的实现
-// ============================================================
-function _sobelEdgeDetectRGBA(imageData, w, h) {
-  const data = imageData.data;
-  // 灰度化 + alpha 加权
+/** Sobel 边缘检测 → 二值边缘图 (1=边缘, 0=非边缘)，自适应阈值 = maxMagnitude * 0.12 */
+function sobelBinaryEdge(data, w, h) {
+  // alpha 加权灰度化
   const gray = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) {
     const idx = i * 4;
-    const alpha = data[idx + 3] / 255;
-    gray[i] = (0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]) * alpha;
+    const a = data[idx + 3] / 255;
+    gray[i] = (0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]) * a;
   }
 
-  const edgeMap = new Float32Array(w * h);
-  let maxMagnitude = 0;
-
+  // Sobel 梯度幅值
+  const mag = new Float32Array(w * h);
+  let maxMag = 0;
   for (let y = 1; y < h - 1; y++) {
     for (let x = 1; x < w - 1; x++) {
       const tl = gray[(y - 1) * w + (x - 1)];
@@ -98,316 +168,170 @@ function _sobelEdgeDetectRGBA(imageData, w, h) {
 
       const gx = -tl + tr - 2 * ml + 2 * mr - bl + br;
       const gy = -tl - 2 * tc - tr + bl + 2 * bc + br;
-      const magnitude = Math.sqrt(gx * gx + gy * gy);
-      edgeMap[y * w + x] = magnitude;
-      if (magnitude > maxMagnitude) maxMagnitude = magnitude;
+      const m = Math.sqrt(gx * gx + gy * gy);
+      mag[y * w + x] = m;
+      if (m > maxMag) maxMag = m;
     }
   }
 
-  // 归一化到 0~255
-  if (maxMagnitude > 0) {
-    for (let i = 0; i < edgeMap.length; i++) {
-      edgeMap[i] = (edgeMap[i] / maxMagnitude) * 255;
-    }
+  const thresh = maxMag * 0.12;
+  const bin = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    bin[i] = mag[i] > thresh ? 1 : 0;
   }
-  return edgeMap;
+  return bin;
 }
 
-function _sobelEdgeDetection(gray, w, h) {
-  const edges = new Float32Array(w * h);
-  const sobelX = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]];
-  const sobelY = [[-1, -2, -1], [0, 0, 0], [1, 2, 1]];
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      let gx = 0, gy = 0;
-      for (let ky = -1; ky <= 1; ky++) {
-        for (let kx = -1; kx <= 1; kx++) {
-          const pv = gray[(y + ky) * w + (x + kx)];
-          gx += pv * sobelX[ky + 1][kx + 1];
-          gy += pv * sobelY[ky + 1][kx + 1];
+/** 形态学膨胀 — 3×3 方形结构元素，iterations 次迭代 */
+function dilate(binary, w, h, iterations) {
+  let src = binary;
+  for (let iter = 0; iter < iterations; iter++) {
+    const dst = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (src[y * w + x] === 1) {
+          dst[y * w + x] = 1;
+          continue;
         }
-      }
-      edges[y * w + x] = Math.sqrt(gx * gx + gy * gy);
-    }
-  }
-  return edges;
-}
-
-// ============================================================
-// 边缘感知降采样（核心新算法）
-//
-// 对每个目标像素对应的源区域：
-//  - 追踪区域内边缘强度最强的像素
-//  - 如果最强边缘 > 阈值 → 使用该边缘像素的灰度值（最近邻，保留锐利边缘）
-//  - 否则 → 使用区域平均灰度值（保留平滑过渡）
-// ============================================================
-function _edgeAwareDownsample(gray, edgeMap, srcW, srcH, gridSize) {
-  const total = gridSize * gridSize;
-  const result = new Uint8Array(total);
-  const blockW = srcW / gridSize;
-  const blockH = srcH / gridSize;
-
-  for (let row = 0; row < gridSize; row++) {
-    for (let col = 0; col < gridSize; col++) {
-      const sx0 = Math.floor(col * blockW);
-      const sy0 = Math.floor(row * blockH);
-      const sx1 = Math.min(Math.floor((col + 1) * blockW), srcW);
-      const sy1 = Math.min(Math.floor((row + 1) * blockH), srcH);
-
-      let sum = 0, cnt = 0;
-      let maxEdge = 0;
-      let edgeGray = 0;
-
-      for (let y = sy0; y < sy1; y++) {
-        for (let x = sx0; x < sx1; x++) {
-          const gv = gray[y * srcW + x];
-          sum += gv;
-          cnt++;
-          const ev = edgeMap[y * srcW + x];
-          if (ev > maxEdge) {
-            maxEdge = ev;
-            edgeGray = gv;
+        // 3×3 邻域内有前景像素 → 膨胀为前景
+        let fg = 0;
+        for (let dy = -1; dy <= 1 && !fg; dy++) {
+          for (let dx = -1; dx <= 1 && !fg; dx++) {
+            const ny = y + dy, nx = x + dx;
+            if (ny >= 0 && ny < h && nx >= 0 && nx < w && src[ny * w + nx] === 1) {
+              fg = 1;
+            }
           }
         }
-      }
-
-      const idx = row * gridSize + col;
-      if (maxEdge > EDGE_THRESHOLD) {
-        // 边缘区域：使用边缘像素的灰度值，保留锐利边界
-        result[idx] = edgeGray;
-      } else {
-        // 平滑区域：使用平均灰度值，保留色调过渡
-        result[idx] = Math.round(sum / cnt);
+        dst[y * w + x] = fg;
       }
     }
+    src = dst;
   }
-  return result;
+  return src;
 }
 
-function _downsampleToGrid(gray, srcW, srcH, gridSize) {
-  const result = new Uint8Array(gridSize * gridSize);
-  for (let row = 0; row < gridSize; row++) {
-    for (let col = 0; col < gridSize; col++) {
-      const sx = Math.floor(col * srcW / gridSize);
-      const sy = Math.floor(row * srcH / gridSize);
-      const ex = Math.floor((col + 1) * srcW / gridSize);
-      const ey = Math.floor((row + 1) * srcH / gridSize);
-      let sum = 0, cnt = 0;
-      for (let y = sy; y < ey; y++) {
-        for (let x = sx; x < ex; x++) {
-          sum += gray[y * srcW + x];
-          cnt++;
-        }
-      }
-      result[row * gridSize + col] = Math.round(sum / cnt);
-    }
+/**
+ * processToEdge(imageData, w, h)
+ *
+ * 高斯模糊 → Sobel 边缘检测 → 形态学膨胀加粗 → 缩放至 32×32 → 二值化
+ *
+ * 关键设计：在原始分辨率检测边缘并膨胀加粗，确保线条在剧烈降采样
+ * （如 4000px→32px，125× 压缩）后不会断裂消失。膨胀迭代次数根据
+ * 原图尺寸自适应计算。
+ *
+ * @param {Uint8ClampedArray} imageData  RGBA 原始像素
+ * @param {number} w  图像宽度
+ * @param {number} h  图像高度
+ * @returns {Uint8Array} 1024 个 0/1
+ */
+export function processToEdge(imageData, w, h) {
+  // Step 1: 高斯模糊去噪
+  const blurred = gaussianBlur(imageData, w, h);
+
+  // Step 2: Sobel → 二值边缘图
+  const edgeBin = sobelBinaryEdge(blurred, w, h);
+
+  // Step 3: 形态学膨胀加粗
+  //   膨胀次数 = max(1, min(⌊longEdge / 128⌋, 12))
+  //   原图 512px → 4 次；原图 1024px → 8 次；原图 2000px+ → 12 次
+  const longEdge = Math.max(w, h);
+  const dilateIter = Math.max(1, Math.min(Math.floor(longEdge / 128), 12));
+  const dilated = dilate(edgeBin, w, h, dilateIter);
+
+  // Step 4: 缩放至 32×32（用浮点灰度表示边缘密度）
+  const edgeGray = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) edgeGray[i] = dilated[i] * 255;
+  const scaled = downscale(edgeGray, w, h, GRID_SIZE);
+
+  // Step 5: 二值化输出（阈值 64 — 格内有边缘即输出黑）
+  const out = new Uint8Array(TOTAL_PIXELS);
+  for (let i = 0; i < TOTAL_PIXELS; i++) {
+    out[i] = scaled[i] > 64 ? 1 : 0;
   }
-  return result;
-}
-
-function _contrastStretch(arr, len) {
-  let minV = 255, maxV = 0;
-  for (let i = 0; i < len; i++) {
-    if (arr[i] < minV) minV = arr[i];
-    if (arr[i] > maxV) maxV = arr[i];
-  }
-  const range = maxV - minV || 1;
-  const result = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    result[i] = Math.round((arr[i] - minV) / range * 255);
-  }
-  return result;
-}
-
-function _floydSteinbergDither(grayValues, gridSize) {
-  const total = gridSize * gridSize;
-  const THRESHOLD = 128;
-  const QUANTUM_WHITE = 255;   // 亮 → 凹下(无墨) → 0
-  const QUANTUM_BLACK = 0;     // 暗 → 凸起(有墨) → 1
-  const pixels = new Float32Array(grayValues);
-  const result = new Uint8Array(total); // 0=白(凹), 1=黑(凸)
-  for (let row = 0; row < gridSize; row++) {
-    for (let col = 0; col < gridSize; col++) {
-      const idx = row * gridSize + col;
-      const old = pixels[idx];
-      const nv = old >= THRESHOLD ? QUANTUM_WHITE : QUANTUM_BLACK;
-      result[idx] = nv === QUANTUM_BLACK ? 1 : 0;
-      const err = old - nv;
-      if (col + 1 < gridSize) pixels[idx + 1] += err * 7 / 16;
-      if (row + 1 < gridSize && col - 1 >= 0) pixels[idx + gridSize - 1] += err * 3 / 16;
-      if (row + 1 < gridSize) pixels[idx + gridSize] += err * 5 / 16;
-      if (row + 1 < gridSize && col + 1 < gridSize) pixels[idx + gridSize + 1] += err * 1 / 16;
-    }
-  }
-  return result;
+  return out;
 }
 
 // ============================================================
-// 二值邻域去噪（新功能）
-//
-// 参考 Bead-Pattern-Maker 的 denoisePattern 思路：
-// 对每个像素检查 3×3 邻域，如果它是"孤立异色点"
-// （周围同色邻居 < 2 个），则翻转为邻域众数颜色。
-// 这能有效消除 Floyd-Steinberg 抖动产生的椒盐噪声。
-// ============================================================
-function _binaryDenoise(pixelArray, gridSize) {
-  const total = gridSize * gridSize;
-  const result = new Uint8Array(pixelArray); // 复制
-
-  for (let row = 0; row < gridSize; row++) {
-    for (let col = 0; col < gridSize; col++) {
-      const idx = row * gridSize + col;
-      const me = pixelArray[idx];
-
-      // 收集 3×3 邻域
-      let sameCount = 0, totalCount = 0;
-      for (let dr = -1; dr <= 1; dr++) {
-        for (let dc = -1; dc <= 1; dc++) {
-          if (dr === 0 && dc === 0) continue; // 排除自身
-          const nr = row + dr;
-          const nc = col + dc;
-          if (nr < 0 || nr >= gridSize || nc < 0 || nc >= gridSize) continue;
-          totalCount++;
-          if (pixelArray[nr * gridSize + nc] === me) sameCount++;
-        }
-      }
-
-      // 如果周围同色邻居不到 2 个，说明是孤立噪点，翻转
-      if (totalCount >= 3 && sameCount < 2) {
-        result[idx] = me === 1 ? 0 : 1;
-      }
-    }
-  }
-  return result;
-}
-
-function _countBlack(pixelArray, len) {
-  let n = 0;
-  for (let i = 0; i < len; i++) {
-    if (pixelArray[i] === 1) n++;
-  }
-  return n;
-}
-
-// ============================================================
-// 公共辅助：画布上加载图片并返回 ImageData
-// ============================================================
-async function _loadImageData(canvas, tempFilePath) {
-  const img = await _loadImage(tempFilePath, canvas);
-  canvas.width = img.width; canvas.height = img.height;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, 0, 0, img.width, img.height);
-  return {
-    imgData: ctx.getImageData(0, 0, img.width, img.height),
-    W: img.width,
-    H: img.height,
-  };
-}
-
-// ============================================================
-// 管线 1：Dither（照片模式）—— 纯灰度 + Floyd-Steinberg 抖动
-// ============================================================
-async function _ditherPipeline(canvas, tempFilePath, gridSize) {
-  const total = gridSize * gridSize;
-  const { imgData, W, H } = await _loadImageData(canvas, tempFilePath);
-
-  const blurred = _gaussianBlur(imgData, W, H);
-  const gray = _toGrayscale(blurred, W, H);
-  const gridGray = _downsampleToGrid(gray, W, H, gridSize);
-  const stretched = _contrastStretch(gridGray, total);
-  const pixelArray = _floydSteinbergDither(stretched, gridSize);
-  const blackCount = _countBlack(pixelArray, total);
-
-  return { pixelArray, blackCount, W, H };
-}
-
-// ============================================================
-// 管线 2：Edge-Aware（边缘感知模式）—— 推荐用于 Logo/文字/线条
-//
-// 在降采样时用边缘强度图引导：
-//  - 边缘区域 → 最近邻取色 → 保留锐利轮廓
-//  - 平滑区域 → 区域平均 → 保留色调过渡
-// 最后做二值去噪消除椒盐散点
-// ============================================================
-async function _edgeAwarePipeline(canvas, tempFilePath, gridSize) {
-  const total = gridSize * gridSize;
-  const { imgData, W, H } = await _loadImageData(canvas, tempFilePath);
-
-  const blurred = _gaussianBlur(imgData, W, H);
-  const gray = _toGrayscale(blurred, W, H);
-  const edgeMap = _sobelEdgeDetectRGBA(blurred, W, H);
-  const gridGray = _edgeAwareDownsample(gray, edgeMap, W, H, gridSize);
-  const stretched = _contrastStretch(gridGray, total);
-  let pixelArray = _floydSteinbergDither(stretched, gridSize);
-
-  // 去噪：消除孤立噪点
-  pixelArray = _binaryDenoise(pixelArray, gridSize);
-
-  const blackCount = _countBlack(pixelArray, total);
-  return { pixelArray, blackCount, W, H };
-}
-
-// ============================================================
-// 管线 3：Edge（徽章模式）—— Sobel 边缘检测 + 素描融合（保留兼容）
-// ============================================================
-async function _edgePipeline(canvas, tempFilePath, gridSize) {
-  const total = gridSize * gridSize;
-  const { imgData, W, H } = await _loadImageData(canvas, tempFilePath);
-
-  const blurred = _gaussianBlur(imgData, W, H);
-  const gray = _toGrayscale(blurred, W, H);
-  const edges = _sobelEdgeDetection(gray, W, H);
-
-  let maxEdge = 0;
-  for (let i = 0; i < W * H; i++) {
-    if (edges[i] > maxEdge) maxEdge = edges[i];
-  }
-  const norm = maxEdge > 0 ? 1 / maxEdge : 1;
-  const fused = new Float32Array(W * H);
-  for (let i = 0; i < W * H; i++) {
-    fused[i] = gray[i] * (1 - edges[i] * norm * 0.8);
-  }
-
-  const stretched = _contrastStretch(fused, W * H);
-  const gridGray = _downsampleToGrid(stretched, W, H, gridSize);
-  const finalGray = _contrastStretch(gridGray, total);
-  let pixelArray = _floydSteinbergDither(finalGray, gridSize);
-  pixelArray = _binaryDenoise(pixelArray, gridSize);
-
-  const blackCount = _countBlack(pixelArray, total);
-  return { pixelArray, blackCount, W, H };
-}
-
-// ============================================================
-// 公开 API
+// 管线 3：波普图腾模式 — Cluster-dot 有序抖动
 // ============================================================
 
 /**
- * 处理图片并生成二值点阵
- * @param {Object} options
- * @param {string}  options.tempFilePath - 图片临时路径
- * @param {Object}  options.canvas       - 离屏 Canvas 实例
- * @param {string}  [options.mode='dither']   - 'dither' 照片 | 'edge-aware' 边缘感知 | 'edge' 徽章
- * @param {number}  [options.gridSize=32]     - 点阵尺寸
- * @returns {Promise<{pixelArray: Uint8Array, blackCount: number}>}
+ * 生成 Cluster-dot 聚点阈值矩阵
+ *
+ * 从 tile 中心向外螺旋排列阈值：
+ *   中心阈值最低 → 暗区先出现小黑点 →
+ *   灰度加深时黑点向外扩大成圆斑 →
+ *   人眼将聚点圆斑整合为连续灰度，产生半色调印刷的波普效果。
  */
-export async function processImage({
-  tempFilePath,
-  canvas,
-  mode = 'dither',
-  gridSize = 32,
-}) {
-  if (!tempFilePath) throw new Error('缺少图片路径');
-  if (!canvas) throw new Error('缺少 Canvas 实例');
+function buildClusterMatrix(size) {
+  const total = size * size;
+  const positions = [];
+  const cx = (size - 1) / 2;
+  const cy = (size - 1) / 2;
 
-  switch (mode) {
-    case 'edge-aware':
-      return _edgeAwarePipeline(canvas, tempFilePath, gridSize);
-    case 'edge':
-      return _edgePipeline(canvas, tempFilePath, gridSize);
-    default:
-      return _ditherPipeline(canvas, tempFilePath, gridSize);
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      positions.push({ r, c, dist: Math.hypot(r - cx, c - cy) });
+    }
   }
+
+  positions.sort((a, b) => {
+    const d = a.dist - b.dist;
+    if (Math.abs(d) < 1e-9) {
+      return Math.atan2(a.r - cx, a.c - cy) - Math.atan2(b.r - cx, b.c - cy);
+    }
+    return d;
+  });
+
+  const m = new Array(size);
+  for (let r = 0; r < size; r++) {
+    m[r] = new Float32Array(size);
+  }
+  for (let k = 0; k < positions.length; k++) {
+    const { r, c } = positions[k];
+    m[r][c] = Math.round((k / (total - 1)) * 255);
+  }
+  return m;
 }
+
+// 8×8 聚点矩阵 — 在 32×32 网格中平铺 4×4 = 16 个 tile
+const CLUSTER_SIZE = 8;
+const CLUSTER_MATRIX = buildClusterMatrix(CLUSTER_SIZE);
+
+/**
+ * processToHalftone(imageData, w, h)
+ *
+ * 灰度化 → 缩放至 32×32 → Cluster-dot 有序抖动
+ *
+ * 与 Floyd-Steinberg 的随机噪点不同，有序抖动产生规则的几何纹理。
+ * 聚点式（cluster-dot）在暗区形成圆形墨点，亮区留白，类似报纸印刷
+ * 或波普艺术的半色调效果。
+ *
+ * @param {Uint8ClampedArray} imageData  RGBA 原始像素
+ * @param {number} w  图像宽度
+ * @param {number} h  图像高度
+ * @returns {Uint8Array} 1024 个 0/1
+ */
+export function processToHalftone(imageData, w, h) {
+  const gray = toGrayscale(imageData, w, h);
+  const scaled = downscale(gray, w, h, GRID_SIZE);
+
+  const out = new Uint8Array(TOTAL_PIXELS);
+  for (let row = 0; row < GRID_SIZE; row++) {
+    for (let col = 0; col < GRID_SIZE; col++) {
+      const i = row * GRID_SIZE + col;
+      const threshold = CLUSTER_MATRIX[row % CLUSTER_SIZE][col % CLUSTER_SIZE];
+
+      // 像素灰度 < 阈值 → 黑(1)，灰度 >= 阈值 → 白(0)
+      out[i] = scaled[i] < threshold ? 1 : 0;
+    }
+  }
+  return out;
+}
+
+// ============================================================
+// 公共导出
+// ============================================================
 
 export { GRID_SIZE, TOTAL_PIXELS };
