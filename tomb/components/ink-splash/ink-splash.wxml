@@ -1,0 +1,41 @@
+<!--
+  ink-splash.wxml —— 泼墨/油漆桶组件
+-->
+<view class="ink-splash-container">
+  <!-- 标题栏 -->
+  <view class="ink-header">
+    <text class="ink-title">🪣 泼墨填充</text>
+    <view class="ink-actions">
+      <view class="ink-btn {{canUndo ? '' : 'disabled'}}" catchtap="onUndo">
+        <text class="ink-btn-icon">↩</text>
+        <text class="ink-btn-label">撤回</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 提示 -->
+  <view class="ink-hint">
+    <text class="ink-hint-text">{{hintText}}</text>
+  </view>
+
+  <!-- Canvas + 油漆桶悬浮标 -->
+  <view class="ink-canvas-wrapper">
+    <!-- Canvas -->
+    <canvas 
+      type="2d"
+      id="inkCanvas"
+      class="ink-canvas"
+      bindtap="onCanvasTap"
+      catchtouchstart="onTouchStart"
+      catchtouchmove="onTouchMove"
+      catchtouchend="onTouchEnd"
+    />
+
+    <!-- 油漆桶光标（浮动在手指上方） -->
+    <view 
+      class="paint-cursor"
+      wx:if="{{showPaintCursor}}"
+      style="left:{{cursorPageX}}px; top:{{cursorPageY}}px;"
+    >🪣</view>
+  </view>
+</view>

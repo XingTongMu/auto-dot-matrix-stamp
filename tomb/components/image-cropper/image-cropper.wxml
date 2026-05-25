@@ -1,0 +1,16 @@
+<!-- components/image-cropper/image-cropper.wxml -->
+<view wx:if="{{show}}" class="cropper-overlay show">
+  <view class="cropper-wrapper">
+    <view class="cropper-header">
+      <view class="toolbar-btn cancel" bindtap="onCancel">取消</view>
+      <view class="toolbar-title">裁剪图片 (1:1)</view>
+      <view class="toolbar-btn confirm" bindtap="onConfirm">确认</view>
+    </view>
+    <view class="cropper-canvas-area">
+      <canvas type="2d" id="cropCanvas" class="cropper-canvas"
+        bindtouchstart="onTouchStart"
+        bindtouchmove="onTouchMove"
+        bindtouchend="onTouchEnd" />
+    </view>
+  </view>
+</view>
